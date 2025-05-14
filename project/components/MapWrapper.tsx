@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Platform, View, Text } from 'react-native';
+import { LocationHelper } from '../utils/LocationHelper';
 
 interface MapWrapperProps {
   onMapReady?: () => void;

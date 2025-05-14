@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, ViewStyle } from 'react-native';
+import { LocationHelper } from '../utils/LocationHelper';
 
 interface MapViewProps {
   style?: ViewStyle;

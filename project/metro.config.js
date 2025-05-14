@@ -1,31 +1,43 @@
 const { getDefaultConfig } = require('expo/metro-config');
+const path = require('path');
 
 const config = getDefaultConfig(__dirname);
 
-// Add alias to replace react-native-maps with react-native-web-maps on web
-config.resolver.alias = {
-  ...config.resolver.alias,
-  'react-native-maps': 'react-native-web-maps',
-};
-
-// Add platform-specific resolver
+// Override the resolver completely
+config.resolver.resolverMainFields = ['react-native', 'browser', 'main'];
 config.resolver.platforms = ['native', 'web', 'android', 'ios'];
 
-// Handle the codegenNativeCommands issue specifically
-const { resolver } = config;
-const originalResolve = resolver.resolve;
-
-resolver.resolve = function (request, ...args) {
-  // Block the problematic import on web
-  if (request.moduleName === 'react-native/Libraries/Utilities/codegenNativeCommands' && 
-      process.env.EXPO_PUBLIC_PLATFORM === 'web') {
-    // Return a mock module
-    return {
-      type: 'sourceFile',
-      filePath: require.resolve('./polyfills/codegenNativeCommands.js'),
-    };
+// Create a custom resolver
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (platform === 'web') {
+    // Block react-native-maps entirely on web
+    if (moduleName === 'react-native-maps') {
+      return {
+        filePath: path.resolve(__dirname, 'polyfills/react-native-maps-web.js'),
+        type: 'sourceFile',
+      };
+    }
+    
+    // Block any native-only modules
+    if (moduleName.includes('codegenNativeCommands') || 
+        moduleName.includes('Libraries/Utilities/codegenNativeCommands')) {
+      return {
+        filePath: path.resolve(__dirname, 'polyfills/empty.js'),
+        type: 'sourceFile',
+      };
+    }
+    
+    // Block expo-location on web to prevent auto-imports
+    if (moduleName === 'expo-location') {
+      return {
+        filePath: path.resolve(__dirname, 'polyfills/expo-location-web.js'),
+        type: 'sourceFile',
+      };
+    }
   }
-  return originalResolve.call(this, request, ...args);
+  
+  // Fall back to default resolver
+  return context.resolveRequest(context, moduleName, platform);
 };
 
 module.exports = config;

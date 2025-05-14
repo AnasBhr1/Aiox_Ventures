@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { useTheme } from '@/context/ThemeContext';
 import { MapPin, X, ChevronRight } from 'lucide-react-native';
 import { POI } from '@/types';
+import { LocationHelper } from '../utils/LocationHelper';
 
 interface POICardProps {
   poi: POI;

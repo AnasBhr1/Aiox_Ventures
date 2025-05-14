@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated, Alert, Platform, ActivityIndicator } from 'react-native';
-import MapView, { Marker, PROVIDER_GOOGLE, Region } from 'react-native-maps';
+import { MapView, Marker, PROVIDER_GOOGLE, Region } from '../../components/Map';
 import { useTheme } from '@/context/ThemeContext';
 import { useAuth } from '@/context/AuthContext';
 import { StatusBar } from 'expo-status-bar';
 import * as Location from 'expo-location';
+import { LocationHelper } from '../../utils/LocationHelper';
 import { router } from 'expo-router';
 import { MapPin, Search, Menu, Moon, Sun, Menu as MenuIcon } from 'lucide-react-native';
 import { POI } from '@/types';
@@ -15,7 +16,7 @@ import * as Haptics from 'expo-haptics';
 export default function MapScreen() {
   const { colors, isDark, theme, setTheme } = useTheme();
   const { user } = useAuth();
-  const [location, setLocation] = useState<Location.LocationObject | null>(null);
+  const [location, setLocation] = useState<any | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [nearbyPOIs, setNearbyPOIs] = useState<POI[]>([]);
@@ -26,24 +27,34 @@ export default function MapScreen() {
     latitudeDelta: 0.0922,
     longitudeDelta: 0.0421,
   });
-  
+
   const cardAnimation = useRef(new Animated.Value(0)).current;
   const mapRef = useRef<MapView>(null);
 
   // Load location and nearby POIs
+  // Load location and nearby POIs
   useEffect(() => {
     (async () => {
       try {
-        let { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          setErrorMsg('Permission to access location was denied');
-          setIsLoading(false);
-          return;
+        // Use LocationHelper which handles platform differences
+        const location = await LocationHelper.getCurrentLocation();
+
+        if (!location) {
+          if (Platform.OS === 'web') {
+            // On web, just show default location without error
+            setErrorMsg(null);
+            setIsLoading(false);
+            return;
+          } else {
+            // On mobile, show permission error only if needed
+            setErrorMsg('Permission to access location was denied');
+            setIsLoading(false);
+            return;
+          }
         }
 
-        let location = await Location.getCurrentPositionAsync({});
         setLocation(location);
-        
+
         // Update map region to user's location
         const newRegion = {
           latitude: location.coords.latitude,
@@ -52,7 +63,7 @@ export default function MapScreen() {
           longitudeDelta: 0.0121,
         };
         setRegion(newRegion);
-        
+
         // Load nearby POIs
         const pois = await getNearbyPOIs(
           location.coords.latitude,
@@ -61,7 +72,9 @@ export default function MapScreen() {
         setNearbyPOIs(pois);
       } catch (error) {
         console.error('Error getting location or POIs:', error);
-        setErrorMsg('Could not fetch location data. Please try again.');
+        if (Platform.OS !== 'web') {
+          setErrorMsg('Could not fetch location data. Please try again.');
+        }
       } finally {
         setIsLoading(false);
       }
@@ -73,9 +86,9 @@ export default function MapScreen() {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
-    
+
     setSelectedPOI(poi);
-    
+
     // Animate card sliding up
     Animated.spring(cardAnimation, {
       toValue: 1,
@@ -83,7 +96,7 @@ export default function MapScreen() {
       tension: 40,
       friction: 8,
     }).start();
-    
+
     // Animate to the marker position
     mapRef.current?.animateToRegion(
       {
@@ -95,7 +108,7 @@ export default function MapScreen() {
       350
     );
   };
-  
+
   // Close POI card
   const closeCard = () => {
     Animated.timing(cardAnimation, {
@@ -104,7 +117,7 @@ export default function MapScreen() {
       useNativeDriver: true,
     }).start(() => setSelectedPOI(null));
   };
-  
+
   // View POI details
   const viewPOIDetails = (poi: POI) => {
     router.push({
@@ -112,16 +125,16 @@ export default function MapScreen() {
       params: { id: poi.id }
     });
   };
-  
+
   // Toggle theme
   const toggleTheme = () => {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
-    
+
     setTheme(theme === 'dark' ? 'light' : 'dark');
   };
-  
+
   // Card animation styles
   const cardTranslateY = cardAnimation.interpolate({
     inputRange: [0, 1],
@@ -252,7 +265,7 @@ export default function MapScreen() {
       <View style={dynamicStyles.container}>
         <View style={dynamicStyles.errorContainer}>
           <Text style={dynamicStyles.errorText}>{errorMsg}</Text>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={dynamicStyles.errorButton}
             onPress={() => router.replace('/')}
           >
@@ -266,7 +279,7 @@ export default function MapScreen() {
   return (
     <View style={dynamicStyles.container}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
-      
+
       {/* Map */}
       <View style={dynamicStyles.mapContainer}>
         <MapView
@@ -313,7 +326,7 @@ export default function MapScreen() {
           <Search size={20} color={colors.muted} />
           <Text style={dynamicStyles.searchText}>Search for places...</Text>
         </TouchableOpacity>
-        
+
         <TouchableOpacity style={dynamicStyles.iconButton} onPress={toggleTheme}>
           {isDark ? (
             <Sun size={24} color={colors.text} />
@@ -321,7 +334,7 @@ export default function MapScreen() {
             <Moon size={24} color={colors.text} />
           )}
         </TouchableOpacity>
-        
+
         <TouchableOpacity style={dynamicStyles.iconButton} onPress={() => router.push('/(tabs)/profile')}>
           <MenuIcon size={24} color={colors.text} />
         </TouchableOpacity>
@@ -329,13 +342,13 @@ export default function MapScreen() {
 
       {/* POI Card */}
       {selectedPOI && (
-        <Animated.View 
+        <Animated.View
           style={[
-            dynamicStyles.cardContainer, 
+            dynamicStyles.cardContainer,
             { transform: [{ translateY: cardTranslateY }] }
           ]}
         >
-          <POICard 
+          <POICard
             poi={selectedPOI}
             onClose={closeCard}
             onViewDetails={() => viewPOIDetails(selectedPOI)}
