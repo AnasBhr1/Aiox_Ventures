@@ -4,7 +4,6 @@ import { MapView, Marker, PROVIDER_GOOGLE, Region } from '../../components/Map';
 import { useTheme } from '@/context/ThemeContext';
 import { useAuth } from '@/context/AuthContext';
 import { StatusBar } from 'expo-status-bar';
-import * as Location from 'expo-location';
 import { LocationHelper } from '../../utils/LocationHelper';
 import { router } from 'expo-router';
 import { MapPin, Search, Menu, Moon, Sun, Menu as MenuIcon } from 'lucide-react-native';
@@ -12,6 +11,13 @@ import { POI } from '@/types';
 import { getNearbyPOIs } from '@/services/poiService';
 import POICard from '@/components/POICard';
 import * as Haptics from 'expo-haptics';
+
+// Declare global types for web marker support
+declare global {
+  interface Window {
+    L: any;
+  }
+}
 
 export default function MapScreen() {
   const { colors, isDark, theme, setTheme } = useTheme();
@@ -29,9 +35,8 @@ export default function MapScreen() {
   });
 
   const cardAnimation = useRef(new Animated.Value(0)).current;
-  const mapRef = useRef<MapView>(null);
+  const mapRef = useRef<any>(null);
 
-  // Load location and nearby POIs
   // Load location and nearby POIs
   useEffect(() => {
     (async () => {
@@ -81,6 +86,65 @@ export default function MapScreen() {
     })();
   }, []);
 
+  // Handle web markers separately with improved timing and error handling
+  useEffect(() => {
+    if (Platform.OS === 'web' && mapRef.current && nearbyPOIs.length > 0) {
+      // Wait longer for map to be fully initialized
+      const timer = setTimeout(() => {
+        if (window.L && mapRef.current?.mapInstance) {
+          const map = mapRef.current.mapInstance;
+          
+          try {
+            // Clear existing markers using the clearMarkers method
+            if (mapRef.current.clearMarkers) {
+              mapRef.current.clearMarkers();
+            }
+            
+            // Add new markers with better error handling
+            nearbyPOIs.forEach(poi => {
+              try {
+                if (mapRef.current.addMarker) {
+                  const marker = mapRef.current.addMarker(
+                    { latitude: poi.latitude, longitude: poi.longitude },
+                    {
+                      title: poi.name,
+                      riseOnHover: true,
+                      riseOffset: 250,
+                    }
+                  );
+                  
+                  if (marker) {
+                    marker.bindPopup(`
+                      <div style="max-width: 200px;">
+                        <strong style="font-size: 16px; color: #333;">${poi.name}</strong>
+                        <br>
+                        <span style="color: #666; font-size: 14px;">${poi.shortDescription || ''}</span>
+                      </div>
+                    `, {
+                      closeButton: true,
+                      autoPan: true,
+                      maxWidth: 250,
+                    });
+                    
+                    marker.on('click', () => {
+                      handleMarkerPress(poi);
+                    });
+                  }
+                }
+              } catch (markerError) {
+                console.warn('Error adding marker for POI:', poi.id, markerError);
+              }
+            });
+          } catch (error) {
+            console.warn('Error updating markers:', error);
+          }
+        }
+      }, 2000); // Increased timeout to ensure map is fully ready
+      
+      return () => clearTimeout(timer);
+    }
+  }, [nearbyPOIs]);
+
   // Handle POI selection
   const handleMarkerPress = (poi: POI) => {
     if (Platform.OS !== 'web') {
@@ -98,15 +162,17 @@ export default function MapScreen() {
     }).start();
 
     // Animate to the marker position
-    mapRef.current?.animateToRegion(
-      {
-        latitude: poi.latitude,
-        longitude: poi.longitude,
-        latitudeDelta: 0.01,
-        longitudeDelta: 0.01,
-      },
-      350
-    );
+    if (mapRef.current?.animateToRegion) {
+      mapRef.current.animateToRegion(
+        {
+          latitude: poi.latitude,
+          longitude: poi.longitude,
+          latitudeDelta: 0.01,
+          longitudeDelta: 0.01,
+        },
+        350
+      );
+    }
   };
 
   // Close POI card
@@ -285,18 +351,18 @@ export default function MapScreen() {
         <MapView
           ref={mapRef}
           style={dynamicStyles.map}
-          provider={PROVIDER_GOOGLE}
+          provider={Platform.OS !== 'web' ? PROVIDER_GOOGLE : undefined}
           initialRegion={region}
           region={region}
           onRegionChangeComplete={setRegion}
-          showsUserLocation
+          showsUserLocation={Platform.OS !== 'web'}
           showsMyLocationButton={false}
           showsCompass={false}
           showsScale={true}
           mapType="standard"
           userInterfaceStyle={isDark ? 'dark' : 'light'}
         >
-          {nearbyPOIs.map((poi) => (
+          {Platform.OS !== 'web' && nearbyPOIs.map((poi) => (
             <Marker
               key={poi.id}
               coordinate={{
